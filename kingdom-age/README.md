@@ -8,6 +8,8 @@ Wallpapers generated with Grok Imagine.
 
 ![Kingdom Age in the Omarchy theme switcher](switcher.jpg)
 
+![Kingdom Age desktop](desktop.jpg)
+
 ![Preview](preview.jpg)
 
 ## Palette

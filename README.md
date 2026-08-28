@@ -2,6 +2,8 @@
 
 ![Kingdom Age in the Omarchy theme switcher](kingdom-age/switcher.jpg)
 
+![Kingdom Age desktop](kingdom-age/desktop.jpg)
+
 Themes for [Omarchy](https://omarchy.org/) Quattro. One folder per theme. Install any of them with:
 
 ```bash
