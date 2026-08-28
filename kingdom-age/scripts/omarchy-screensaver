@@ -1,0 +1,64 @@
+#!/bin/bash
+
+# omarchy:summary=Run the Omarchy screensaver using random effects from TTE.
+# Kingdom Age override: Matrix digital rain when branding contains KINGDOM AGE.
+
+screensaver_in_focus() {
+  hyprctl activewindow -j | jq -e '.class == "org.omarchy.screensaver"' >/dev/null 2>&1
+}
+
+exit_screensaver() {
+  hyprctl eval 'hl.config({ cursor = { invisible = false } })' &>/dev/null || hyprctl keyword cursor:invisible false &>/dev/null || true
+  pkill -x ttfx 2>/dev/null
+  pkill -f '[o]rg.omarchy.screensaver' 2>/dev/null
+  exit 0
+}
+
+trap exit_screensaver SIGINT SIGTERM SIGHUP SIGQUIT
+
+printf '\033]11;rgb:00/00/00\007'
+
+hyprctl eval 'hl.config({ cursor = { invisible = true } })' &>/dev/null || hyprctl keyword cursor:invisible true &>/dev/null
+
+tty=$(tty 2>/dev/null)
+
+wait_for_terminal_resize() {
+  local deadline=$((SECONDS + 2))
+  while ((SECONDS < deadline)) && [[ $(stty size 2>/dev/null) == "24 80" ]]; do
+    sleep 0.02
+  done
+}
+
+wait_for_terminal_resize
+
+branding="${HOME}/.config/omarchy/branding/screensaver.txt"
+
+run_ttfx() {
+  if [[ -f $branding ]] && grep -q 'KINGDOM AGE' "$branding" 2>/dev/null; then
+    ttfx -i "$branding" \
+      --frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas \
+      --anchor-canvas c --anchor-text c --no-eol --no-restore-cursor \
+      matrix \
+      --rain-time 18 \
+      --highlight-color f4e8d6 \
+      --rain-color-gradient 6f9a4a 3d5a28 d4a054 \
+      --final-gradient-stops d4a054 6f9a4a ead9c4 \
+      --final-gradient-direction radial \
+      --rain-symbols 2 5 9 8 Z '*' ')' ':' . = + - ¦ '|' _ ｦ ｱ ｳ ｴ ｵ ｶ ｷ ｹ ｺ ｻ ｼ ｽ ｾ ｿ ﾀ ﾂ ﾃ ﾅ ﾆ ﾇ ﾈ ﾊ ﾋ ﾎ ﾏ ﾐ ﾑ ﾒ ﾓ ﾔ ﾕ ﾗ ﾘ ﾜ M i c a h f g v n e L O R D
+  else
+    ttfx -i "$branding" \
+      --frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas \
+      --anchor-canvas c --anchor-text c \
+      --random-effect --no-eol --no-restore-cursor
+  fi
+}
+
+while true; do
+  run_ttfx &
+
+  while pgrep -t "${tty#/dev/}" -x ttfx >/dev/null; do
+    if read -n1 -t 1 || ! screensaver_in_focus; then
+      exit_screensaver
+    fi
+  done
+done

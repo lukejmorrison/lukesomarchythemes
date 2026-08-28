@@ -1,0 +1,38 @@
+mode = "dark"
+
+# Honey of the lamp / ripe wheat / beer
+accent = "#d4a054"
+selection = "#3a3024"
+muted = "#7a6e5c"
+
+# Garden soil at dusk
+background = "#17140f"
+dark_background = "#110f0b"
+darker_background = "#0c0a08"
+lighter_background = "#2a241c"
+
+# Linen and sunlight
+foreground = "#ead9c4"
+dark_foreground = "#8a7b68"
+light_foreground = "#d4c2ab"
+bright_foreground = "#f4e8d6"
+
+red = "#c45c48"
+yellow = "#e0b85a"
+orange = "#d48248"
+green = "#6f9a4a"
+cyan = "#6aaba0"
+blue = "#5a7e88"
+magenta = "#a85a78"
+brown = "#6b4a32"
+
+bright_red = "#e07a68"
+bright_yellow = "#f0d078"
+bright_green = "#8fb85e"
+bright_cyan = "#8fc8bc"
+bright_blue = "#7a9aa8"
+bright_magenta = "#c47a98"
+
+# Fig leaf into honey
+hyprland_active_border = "rgba(d4a054ee) rgba(6f9a4aee) 45deg"
+hyprland_inactive_border = "rgba(3a3024aa)"
