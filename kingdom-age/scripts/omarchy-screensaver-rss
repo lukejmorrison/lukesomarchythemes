@@ -1,0 +1,616 @@
+#!/usr/bin/env python3
+"""Fetch, cache, and pick RSS/Atom items for the Kingdom Age screensaver."""
+
+from __future__ import annotations
+
+import argparse
+import html
+import json
+import os
+import random
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
+from pathlib import Path
+from xml.etree.ElementTree import QName
+
+STALE_SECONDS = 60 * 60
+FETCH_TIMEOUT = 10
+MAX_ITEMS_PER_FEED = 40
+MAX_DESCRIPTION_CHARS = 420
+WRAP_WIDTH = 64
+USER_AGENT = "kingdom-age-screensaver/1.0 (+https://github.com/lukejmorrison/lukesomarchythemes)"
+
+CONTENT_NS = "http://purl.org/rss/1.0/modules/content/"
+DC_NS = "http://purl.org/dc/elements/1.1/"
+
+
+def _home() -> Path:
+    return Path(os.environ.get("HOME") or Path.home())
+
+
+def cache_dir() -> Path:
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    root = Path(xdg) if xdg else _home() / ".cache"
+    return root / "omarchy" / "kingdom-age-rss"
+
+
+def user_feeds_path() -> Path:
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    root = Path(xdg) if xdg else _home() / ".config"
+    return root / "omarchy" / "screensaver-feeds.conf"
+
+
+def theme_dir() -> Path:
+    override = os.environ.get("KINGDOM_AGE_THEME_DIR")
+    if override:
+        return Path(override)
+    here = Path(__file__).resolve().parent.parent
+    if (here / "rss-feeds.conf").is_file() or (here / "screensaver.txt").is_file():
+        return here
+    linked = _home() / ".config" / "omarchy" / "themes" / "kingdom-age"
+    if linked.exists():
+        return linked.resolve()
+    return here
+
+
+def items_path() -> Path:
+    return cache_dir() / "items.json"
+
+
+def fetched_at_path() -> Path:
+    return cache_dir() / "fetched_at"
+
+
+def last_pick_path() -> Path:
+    return cache_dir() / "last_pick"
+
+
+def display_path() -> Path:
+    return cache_dir() / "display.txt"
+
+
+def refresh_lock_path() -> Path:
+    return cache_dir() / ".refresh.lock"
+
+
+def parse_feed_urls(text: str) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("@"):
+            continue
+        if not (line.startswith("https://") or line.startswith("http://")):
+            continue
+        if line in seen:
+            continue
+        seen.add(line)
+        urls.append(line)
+    return urls
+
+
+def read_feed_file(path: Path) -> list[str]:
+    try:
+        return parse_feed_urls(path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return []
+
+
+def configured_feed_urls() -> list[str]:
+    """User file wins when it lists at least one URL; otherwise shipped defaults."""
+    user_urls = read_feed_file(user_feeds_path())
+    if user_urls:
+        return user_urls
+    return read_feed_file(theme_dir() / "rss-feeds.conf")
+
+
+class _HTMLText(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"br", "p", "div", "li", "tr", "h1", "h2", "h3", "h4"}:
+            self._parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"p", "div", "li", "tr", "h1", "h2", "h3", "h4"}:
+            self._parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        self._parts.append(data)
+
+    def text(self) -> str:
+        return "".join(self._parts)
+
+
+def strip_html(value: str) -> str:
+    if not value:
+        return ""
+    parser = _HTMLText()
+    try:
+        parser.feed(value)
+        parser.close()
+        text = parser.text()
+    except Exception:
+        text = re.sub(r"<[^>]+>", " ", value)
+    text = html.unescape(text)
+    text = text.replace("\xa0", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n[ \t]+", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _local(tag: str) -> str:
+    if tag.startswith("{"):
+        return tag.rsplit("}", 1)[-1]
+    return tag
+
+
+def _child_text(node: ET.Element, names: set[str]) -> str:
+    for child in list(node):
+        if _local(child.tag) in names:
+            if child.text and child.text.strip():
+                return child.text.strip()
+            # Atom title/content may nest XHTML
+            inner = "".join(ET.tostring(c, encoding="unicode") for c in list(child))
+            if inner.strip():
+                return inner
+    return ""
+
+
+def _link_href(node: ET.Element) -> str:
+    for child in list(node):
+        if _local(child.tag) != "link":
+            continue
+        href = (child.attrib.get("href") or "").strip()
+        rel = (child.attrib.get("rel") or "alternate").strip().lower()
+        if href and rel in {"alternate", ""}:
+            return href
+        if href and not child.attrib.get("rel"):
+            return href
+        if child.text and child.text.strip().startswith("http"):
+            return child.text.strip()
+    for child in list(node):
+        if _local(child.tag) == "link":
+            href = (child.attrib.get("href") or (child.text or "")).strip()
+            if href:
+                return href
+    return ""
+
+
+def _entry_nodes(root: ET.Element) -> list[ET.Element]:
+    entries: list[ET.Element] = []
+    for node in root.iter():
+        name = _local(node.tag)
+        if name in {"item", "entry"}:
+            entries.append(node)
+    return entries
+
+
+def _channel_title(root: ET.Element) -> str:
+    for node in root.iter():
+        if _local(node.tag) in {"channel", "feed", "RDF"}:
+            title = _child_text(node, {"title"})
+            if title:
+                return strip_html(title)
+    return strip_html(_child_text(root, {"title"}))
+
+
+def _item_body(node: ET.Element) -> str:
+    encoded = ""
+    for child in list(node):
+        if child.tag == str(QName(CONTENT_NS, "encoded")) or _local(child.tag) == "encoded":
+            encoded = (child.text or "").strip()
+            if encoded:
+                break
+    content = _child_text(node, {"content", "encoded"})
+    summary = _child_text(node, {"summary", "description", "subtitle"})
+    for candidate in (encoded, content, summary):
+        cleaned = strip_html(candidate)
+        if cleaned:
+            return cleaned
+    return ""
+
+
+def _item_date(node: ET.Element) -> str:
+    raw = _child_text(node, {"pubDate", "published", "updated", "date"})
+    if not raw:
+        for child in list(node):
+            if child.tag == str(QName(DC_NS, "date")) or _local(child.tag) == "date":
+                raw = (child.text or "").strip()
+                if raw:
+                    break
+    return format_pubdate(raw)
+
+
+def format_pubdate(raw: str) -> str:
+    if not raw:
+        return ""
+    raw = raw.strip()
+    # Already a short ISO date
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", raw)
+    if m:
+        try:
+            import datetime
+
+            dt = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            return dt.strftime("%-d %b %Y")
+        except ValueError:
+            return raw[:10]
+    try:
+        from email.utils import parsedate_to_datetime
+
+        dt = parsedate_to_datetime(raw)
+        return dt.strftime("%-d %b %Y")
+    except (TypeError, ValueError, IndexError):
+        return raw[:32]
+
+
+def parse_feed_xml(payload: bytes, feed_url: str) -> list[dict[str, str]]:
+    try:
+        root = ET.fromstring(payload)
+    except ET.ParseError:
+        return []
+    source = _channel_title(root) or host_of(feed_url)
+    items: list[dict[str, str]] = []
+    for node in _entry_nodes(root):
+        title = strip_html(_child_text(node, {"title"}))
+        description = _item_body(node)
+        if title and description and description.startswith(title):
+            description = description[len(title) :].lstrip(" :-—–\n")
+        if not title and not description:
+            continue
+        item = {
+            "title": title,
+            "description": description,
+            "source": source,
+            "pubDate": _item_date(node),
+            "link": _link_href(node),
+            "feed": feed_url,
+        }
+        items.append(item)
+        if len(items) >= MAX_ITEMS_PER_FEED:
+            break
+    return items
+
+
+def host_of(url: str) -> str:
+    try:
+        from urllib.parse import urlparse
+
+        host = urlparse(url).hostname or ""
+        return host.removeprefix("www.") or url
+    except Exception:
+        return url
+
+
+def fetch_url(url: str, timeout: int = FETCH_TIMEOUT) -> bytes:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+            "Accept-Encoding": "identity",
+        },
+        method="GET",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = resp.read()
+        ctype = (resp.headers.get("Content-Type") or "").lower()
+    if not data:
+        return b""
+    # Reject obvious HTML homepages so a missing feed does not poison the cache
+    head = data.lstrip()[:200].lower()
+    if b"<rss" in head or b"<feed" in head or b"<rdf" in head:
+        return data
+    if "xml" in ctype or "rss" in ctype or "atom" in ctype:
+        return data
+    if head.startswith(b"<?xml") or b"<rss" in data[:800] or b"<feed" in data[:800]:
+        return data
+    return b""
+
+
+def load_items() -> list[dict[str, str]]:
+    path = items_path()
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    out: list[dict[str, str]] = []
+    for row in data:
+        if isinstance(row, dict) and (row.get("title") or row.get("description")):
+            out.append({k: str(v) if v is not None else "" for k, v in row.items()})
+    return out
+
+
+def save_items(items: list[dict[str, str]]) -> None:
+    dest = cache_dir()
+    dest.mkdir(parents=True, exist_ok=True)
+    tmp = dest / "items.json.tmp"
+    tmp.write_text(json.dumps(items, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.replace(items_path())
+    fetched_at_path().write_text(str(int(time.time())) + "\n", encoding="utf-8")
+
+
+def cache_age_seconds() -> float | None:
+    path = fetched_at_path()
+    if path.is_file():
+        try:
+            return max(0.0, time.time() - float(path.read_text().strip()))
+        except (OSError, ValueError):
+            pass
+    items = items_path()
+    if items.is_file():
+        try:
+            return max(0.0, time.time() - items.stat().st_mtime)
+        except OSError:
+            return None
+    return None
+
+
+def item_key(item: dict[str, str]) -> str:
+    return item.get("link") or f"{item.get('title', '')}|{item.get('source', '')}"
+
+
+def refresh_feeds(urls: list[str] | None = None) -> list[dict[str, str]]:
+    urls = list(urls if urls is not None else configured_feed_urls())
+    merged: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for url in urls:
+        try:
+            payload = fetch_url(url)
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            continue
+        if not payload:
+            continue
+        for item in parse_feed_xml(payload, url):
+            key = item_key(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+    if merged:
+        save_items(merged)
+        return merged
+    # Keep last good cache when every fetch fails
+    existing = load_items()
+    if existing:
+        return existing
+    save_items([])
+    return []
+
+
+def _lock_refresh() -> bool:
+    dest = cache_dir()
+    dest.mkdir(parents=True, exist_ok=True)
+    lock = refresh_lock_path()
+    try:
+        fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        os.write(fd, f"{os.getpid()}\n".encode())
+        os.close(fd)
+        return True
+    except FileExistsError:
+        try:
+            age = time.time() - lock.stat().st_mtime
+            if age > 120:
+                lock.unlink(missing_ok=True)
+                return _lock_refresh()
+        except OSError:
+            return False
+        return False
+
+
+def _unlock_refresh() -> None:
+    try:
+        refresh_lock_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def spawn_refresh() -> None:
+    if not _lock_refresh():
+        return
+    try:
+        import subprocess
+
+        subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "refresh"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError:
+        _unlock_refresh()
+
+
+def ensure_cache() -> list[dict[str, str]]:
+    items = load_items()
+    age = cache_age_seconds()
+    stale = age is None or age >= STALE_SECONDS
+    if items and not stale:
+        return items
+    if items and stale:
+        spawn_refresh()
+        return items
+    if _lock_refresh():
+        try:
+            return refresh_feeds()
+        finally:
+            _unlock_refresh()
+    return load_items()
+
+
+def wordmark_header(screensaver_txt: Path) -> str:
+    try:
+        lines = screensaver_txt.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        lines = []
+    header: list[str] = []
+    found = False
+    for line in lines:
+        header.append(line)
+        if "KINGDOM AGE" in line:
+            found = True
+            break
+    if not found:
+        header.append("                              KINGDOM AGE")
+    text = "\n".join(header).rstrip() + "\n\n"
+    return text
+
+
+def wrap_text(text: str, width: int = WRAP_WIDTH) -> str:
+    import textwrap
+
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    wrapped = [textwrap.fill(p, width=width) for p in paragraphs]
+    return "\n\n".join(wrapped)
+
+
+def truncate(text: str, limit: int = MAX_DESCRIPTION_CHARS) -> str:
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1]
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" ,;:") + "…"
+
+
+def compose_display(item: dict[str, str], header: str) -> str:
+    title = (item.get("title") or "").strip()
+    body = truncate(item.get("description") or "")
+    source = (item.get("source") or "").strip()
+    pub = (item.get("pubDate") or "").strip()
+    parts = [header.rstrip(), ""]
+    if title:
+        parts.append(title)
+        parts.append("")
+    if body:
+        parts.append(wrap_text(body))
+        parts.append("")
+    credit = " · ".join(p for p in (source, pub) if p)
+    if credit:
+        parts.append(f"— {credit}")
+    text = "\n".join(parts).rstrip() + "\n"
+    if "KINGDOM AGE" not in text:
+        text = "KINGDOM AGE\n\n" + text
+    return text
+
+
+def pick_item(items: list[dict[str, str]]) -> dict[str, str] | None:
+    if not items:
+        return None
+    last = ""
+    try:
+        last = last_pick_path().read_text(encoding="utf-8").strip()
+    except OSError:
+        last = ""
+    choices = [i for i in items if item_key(i) != last] if len(items) > 1 else items
+    if not choices:
+        choices = items
+    return random.choice(choices)
+
+
+def write_display(item: dict[str, str], out: Path | None = None) -> Path:
+    dest = out or display_path()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    header = wordmark_header(theme_dir() / "screensaver.txt")
+    dest.write_text(compose_display(item, header), encoding="utf-8")
+    try:
+        last_pick_path().write_text(item_key(item) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    return dest
+
+
+def cmd_refresh(_args: argparse.Namespace) -> int:
+    try:
+        items = refresh_feeds()
+    finally:
+        _unlock_refresh()
+    print(f"{len(items)} items cached", file=sys.stderr)
+    return 0 if items else 1
+
+
+def cmd_pick(args: argparse.Namespace) -> int:
+    items = ensure_cache()
+    item = pick_item(items)
+    if not item:
+        return 1
+    out = Path(args.out) if args.out else display_path()
+    path = write_display(item, out)
+    print(path)
+    return 0
+
+
+def cmd_preview(args: argparse.Namespace) -> int:
+    items = ensure_cache()
+    if args.refresh:
+        if _lock_refresh():
+            try:
+                items = refresh_feeds()
+            finally:
+                _unlock_refresh()
+        else:
+            items = refresh_feeds()
+    item = pick_item(items)
+    if not item:
+        print("No cached RSS items; screensaver will use screensaver.txt verses.", file=sys.stderr)
+        return 1
+    header = wordmark_header(theme_dir() / "screensaver.txt")
+    sys.stdout.write(compose_display(item, header))
+    return 0
+
+
+def cmd_list(_args: argparse.Namespace) -> int:
+    urls = configured_feed_urls()
+    if not urls:
+        print("No feed URLs configured.", file=sys.stderr)
+        return 1
+    for url in urls:
+        print(url)
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="omarchy-screensaver-rss",
+        description="Cache RSS/Atom feeds for the Kingdom Age Matrix screensaver.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("refresh", help="Fetch configured feeds into the local cache")
+    pick = sub.add_parser("pick", help="Write a random cached item as screensaver text")
+    pick.add_argument("--out", help="Output path (default: ~/.cache/omarchy/kingdom-age-rss/display.txt)")
+    preview = sub.add_parser("preview", help="Print a random cached item (wordmark + quote)")
+    preview.add_argument("--refresh", action="store_true", help="Fetch feeds before picking")
+    sub.add_parser("list", help="Print the resolved feed URL list")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    commands = {
+        "refresh": cmd_refresh,
+        "pick": cmd_pick,
+        "preview": cmd_preview,
+        "list": cmd_list,
+    }
+    return commands[args.command](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -45,10 +45,41 @@ Cycle backgrounds with `Super + Ctrl + Space`.
 
 ## Screensaver
 
-Kingdom Age can drive Omarchy’s Matrix screensaver: digital rain in fig-leaf green, then the fig-tree verses resolve on the Omarchy wordmark. A `theme-set` hook copies `screensaver.txt` into `~/.config/omarchy/branding/` when this theme is applied, and restores the stock wordmark when you leave it. Preview with:
+Kingdom Age drives Omarchy’s Matrix screensaver: digital rain in fig-leaf green, then a quote or headline resolves on the Omarchy wordmark.
+
+Items come from RSS/Atom feeds, cached under `~/.cache/omarchy/kingdom-age-rss/`. The cache refreshes when you apply this theme and lazily when it is older than about an hour. If every feed is offline or the cache is empty, the fig-tree verses in `screensaver.txt` are used instead. Matrix rain still runs either way.
+
+A `theme-set` hook copies `screensaver.txt` into `~/.config/omarchy/branding/` when this theme is applied, and restores the stock Omarchy wordmark when you leave it.
+
+### Feeds
+
+Shipped defaults live in [`rss-feeds.conf`](rss-feeds.conf):
+
+- https://wizwam.com/quotes/rss
+- https://wizwam.com/news/rss
+
+**Config rule:** if `~/.config/omarchy/screensaver-feeds.conf` exists and lists at least one URL, it **replaces** the shipped list. Otherwise the defaults above are used. One `http://` or `https://` URL per line; `#` starts a comment.
+
+To keep the wizwam feeds and add more (any public RSS or Atom URL):
 
 ```bash
+cp ~/.config/omarchy/themes/kingdom-age/rss-feeds.conf \
+   ~/.config/omarchy/screensaver-feeds.conf
+```
+
+Then append URLs. `yahvehyireh.com` has no native RSS; those verses are published at `https://wizwam.com/quotes/rss`.
+
+### Preview
+
+```bash
+# Force the screensaver (Matrix rain, then a cached item or verses)
 omarchy-launch-screensaver force
+
+# Refresh feeds and print a sample resolve screen
+~/.config/omarchy/themes/kingdom-age/scripts/omarchy-screensaver-rss preview --refresh
+
+# Show the URLs the screensaver will actually fetch
+~/.config/omarchy/themes/kingdom-age/scripts/omarchy-screensaver-rss list
 ```
 
 Any key or mouse movement exits.
