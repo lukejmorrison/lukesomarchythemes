@@ -6,6 +6,8 @@ Micah 4:4 · 1 Kings 4:25 · Zechariah 3:10 · John 1:48–49 · Isaiah 2:4 · I
 
 Wallpapers generated with Grok Imagine.
 
+![Kingdom Age in the Omarchy theme switcher](switcher.jpg)
+
 ![Preview](preview.jpg)
 
 ## Palette
