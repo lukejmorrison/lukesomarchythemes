@@ -45,7 +45,16 @@ Cycle backgrounds with `Super + Ctrl + Space`.
 
 ## Screensaver
 
-Kingdom Age can drive Omarchy’s Matrix screensaver: digital rain in fig-leaf green, then the fig-tree verses resolve on the Omarchy wordmark. A `theme-set` hook copies `screensaver.txt` into `~/.config/omarchy/branding/` when this theme is applied, and restores the stock wordmark when you leave it. Preview with:
+Honey-gold and fig-leaf digital rain — not neon Matrix green. Full screen on every monitor; each screen gets a different slice of the feeds.
+
+Default feeds (edit `~/.config/omarchy/branding/screensaver-feeds.txt`, one URL per line):
+
+```
+https://wizwam.com/quotes/rss
+https://wizwam.com/news/rss
+```
+
+If a feed is empty or down, the fig-tree verses in `screensaver.txt` fill in. Preview with:
 
 ```bash
 omarchy-launch-screensaver force

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# omarchy:summary=Run the Omarchy screensaver using random effects from TTE.
-# Kingdom Age override: Matrix digital rain when branding contains KINGDOM AGE.
+# Kingdom Age screensaver: honey-gold + fig-leaf Matrix rain over RSS (or verses).
+# Each monitor gets its own slice of the feeds.
 
 screensaver_in_focus() {
   hyprctl activewindow -j | jq -e '.class == "org.omarchy.screensaver"' >/dev/null 2>&1
@@ -16,7 +16,7 @@ exit_screensaver() {
 
 trap exit_screensaver SIGINT SIGTERM SIGHUP SIGQUIT
 
-printf '\033]11;rgb:00/00/00\007'
+printf '\033]11;rgb:17/14/0f\007'
 
 hyprctl eval 'hl.config({ cursor = { invisible = true } })' &>/dev/null || hyprctl keyword cursor:invisible true &>/dev/null
 
@@ -32,21 +32,61 @@ wait_for_terminal_resize() {
 wait_for_terminal_resize
 
 branding="${HOME}/.config/omarchy/branding/screensaver.txt"
+feeds_py="${HOME}/.config/omarchy/themes/kingdom-age/scripts/screensaver-feeds.py"
+if [[ ! -f $feeds_py ]]; then
+  feeds_py="${HOME}/.config/omarchy/themes/1-kingdom-age-v2/scripts/screensaver-feeds.py"
+fi
+if [[ ! -f $feeds_py ]]; then
+  feeds_py="/home/luke/dev/omatheme/kingdom-age/scripts/screensaver-feeds.py"
+fi
+
+kingdom_age_active() {
+  [[ -f $branding ]] && grep -q 'KINGDOM AGE' "$branding" 2>/dev/null
+}
+
+discover_monitor() {
+  if [[ -n ${KINGDOM_AGE_MONITOR:-} ]]; then
+    printf '%s\n' "$KINGDOM_AGE_MONITOR"
+    return
+  fi
+  local ppid mon
+  ppid=$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')
+  mon=$(hyprctl clients -j 2>/dev/null | jq -r --argjson pid "${ppid:-0}" '
+    (.[] | select(.pid == $pid) | .monitor | tostring) // empty
+  ' | head -1)
+  if [[ $mon =~ ^[0-9]+$ ]]; then
+    hyprctl monitors -j | jq -r --argjson id "$mon" '.[] | select(.id == $id) | .name' | head -1
+    return
+  fi
+  [[ -n $mon ]] && printf '%s\n' "$mon" && return
+  printf '%s\n' "screen"
+}
 
 run_ttfx() {
-  if [[ -f $branding ]] && grep -q 'KINGDOM AGE' "$branding" 2>/dev/null; then
-    ttfx -i "$branding" \
+  local input="$branding"
+  local monitor
+
+  if kingdom_age_active; then
+    monitor=$(discover_monitor)
+    if [[ -f $feeds_py ]]; then
+      built=$(python3 "$feeds_py" "$monitor" 2>/dev/null || true)
+      [[ -n $built && -f $built ]] && input="$built"
+    fi
+
+    # Honey-gold rain with fig-leaf as the deep stop — not neon Matrix green.
+    ttfx -i "$input" \
       --frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas \
       --anchor-canvas c --anchor-text c --no-eol --no-restore-cursor \
+      --terminal-background-color '#17140f' \
       matrix \
-      --rain-time 18 \
+      --rain-time 10 \
       --highlight-color f4e8d6 \
-      --rain-color-gradient 6f9a4a 3d5a28 d4a054 \
-      --final-gradient-stops d4a054 6f9a4a ead9c4 \
+      --rain-color-gradient d4a054 e0b85a c4924a 8f7a3a 6f9a4a 3d5a28 \
+      --final-gradient-stops f4e8d6 d4a054 6f9a4a \
       --final-gradient-direction radial \
-      --rain-symbols 2 5 9 8 Z '*' ')' ':' . = + - ¦ '|' _ ｦ ｱ ｳ ｴ ｵ ｶ ｷ ｹ ｺ ｻ ｼ ｽ ｾ ｿ ﾀ ﾂ ﾃ ﾅ ﾆ ﾇ ﾈ ﾊ ﾋ ﾎ ﾏ ﾐ ﾑ ﾒ ﾓ ﾔ ﾕ ﾗ ﾘ ﾜ M i c a h f g v n e L O R D
+      --rain-symbols A E I O U T H S N R L D M C G F B Y W P K V . : + '|' ¦ '*' 2 5 9
   else
-    ttfx -i "$branding" \
+    ttfx -i "$input" \
       --frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas \
       --anchor-canvas c --anchor-text c \
       --random-effect --no-eol --no-restore-cursor

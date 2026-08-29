@@ -46,6 +46,8 @@ Every household on its own land, under its own vine and fig tree. Golden-hour ga
 
 Soil `#17140f` · linen `#ead9c4` · honey `#d4a054` · fig leaf `#6f9a4a`
 
+Screensaver: honey-gold / fig-leaf rain (no neon Matrix green), RSS-driven, a different slice on each monitor. Feeds live in `kingdom-age/screensaver-feeds.txt`.
+
 ---
 
 ## Add another theme
