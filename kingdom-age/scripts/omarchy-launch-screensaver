@@ -25,10 +25,14 @@ script_dir="$(cd "$(dirname "$script_path")" && pwd)"
 screensaver="$script_dir/omarchy-screensaver"
 if [[ ! -x $screensaver ]]; then
   screensaver="${HOME}/.config/omarchy/themes/kingdom-age/scripts/omarchy-screensaver"
+  script_dir="$(cd "$(dirname "$screensaver")" && pwd)"
 fi
 if [[ ! -x $screensaver ]]; then
   exit 1
 fi
+ghostty_cfg="$script_dir/ghostty-screensaver"
+alacritty_cfg="$script_dir/alacritty-screensaver.toml"
+foot_cfg="$script_dir/foot-screensaver.ini"
 
 focused=$(omarchy-hyprland-monitor-focused)
 terminal=$(xdg-terminal-exec --print-id)
@@ -68,16 +72,16 @@ for m in $(hyprctl monitors -j | jq -r '.[] | .name'); do
 
   case $terminal in
   *Alacritty*)
-    hypr_exec alacritty --class=org.omarchy.screensaver --config-file "$OMARCHY_PATH/default/alacritty/screensaver.toml" -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
+    hypr_exec alacritty --class=org.omarchy.screensaver --config-file "$alacritty_cfg" -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
     ;;
   *ghostty*)
-    hypr_exec ghostty --class=org.omarchy.screensaver --config-file="$OMARCHY_PATH/default/ghostty/screensaver" --font-size=18 -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
+    hypr_exec ghostty --class=org.omarchy.screensaver --config-file="$ghostty_cfg" --font-size=18 --background=#17140f --window-padding-x=0 --window-padding-y=0 --window-decoration=none -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
     ;;
   *foot*)
-    hypr_exec foot --app-id=org.omarchy.screensaver --config="$OMARCHY_PATH/default/foot/screensaver.ini" -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
+    hypr_exec foot --app-id=org.omarchy.screensaver --config="$foot_cfg" -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
     ;;
   *kitty*)
-    hypr_exec kitty --class=org.omarchy.screensaver --override font_size=18 --override window_padding_width=0 -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
+    hypr_exec kitty --class=org.omarchy.screensaver --override font_size=18 --override window_padding_width=0 --override background="#17140f" --override hide_window_decorations=yes -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
     ;;
   esac
 

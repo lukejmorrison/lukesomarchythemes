@@ -1,0 +1,15 @@
+[colors.primary]
+background = "0x17140f"
+foreground = "0xead9c4"
+
+[colors.cursor]
+cursor = "0x17140f"
+
+[font]
+size = 18.0
+
+[window]
+opacity = 1.0
+padding.x = 0
+padding.y = 0
+decorations = "None"

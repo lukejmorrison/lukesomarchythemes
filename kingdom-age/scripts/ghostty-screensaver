@@ -1,0 +1,11 @@
+# Edge-to-edge Kingdom Age screensaver. Soil fill so leftover cells are not black.
+background = #17140f
+foreground = #ead9c4
+window-padding-x = 0
+window-padding-y = 0
+window-padding-color = extend-always
+window-decoration = none
+window-theme = ghostty
+background-opacity = 1
+cursor-color = #17140f
+cursor-opacity = 0

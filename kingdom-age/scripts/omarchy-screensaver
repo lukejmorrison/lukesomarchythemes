@@ -99,10 +99,11 @@ run_ttfx() {
       [[ -n $built && -f $built ]] && input="$built"
     fi
 
-    # Honey-gold rain with fig-leaf as the deep stop — not neon Matrix green.
+    # Fill the terminal. Pin canvas to the top-left so leftover cells are not
+    # a centered black frame. Soil fill matches Ghostty/Alacritty/Foot.
     ttfx -i "$input" \
-      --frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas \
-      --anchor-canvas c --anchor-text c --no-eol --no-restore-cursor \
+      --frame-rate 120 --canvas-width -1 --canvas-height -1 --reuse-canvas \
+      --anchor-canvas nw --anchor-text c --no-eol --no-restore-cursor \
       --terminal-background-color '#17140f' \
       matrix \
       --rain-time 10 \
@@ -113,9 +114,9 @@ run_ttfx() {
       --rain-symbols A E I O U T H S N R L D M C G F B Y W P K V . : + '|' ¦ '*' 2 5 9
   else
     ttfx -i "$input" \
-      --frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas \
-      --anchor-canvas c --anchor-text c \
-      --random-effect --no-eol --no-restore-cursor
+      --frame-rate 120 --canvas-width -1 --canvas-height -1 --reuse-canvas \
+      --anchor-canvas nw --anchor-text c \
+      --random-effect --no-eol --no-restore-cursor --terminal-background-color '#17140f'
   fi
 }
 
