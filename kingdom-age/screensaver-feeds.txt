@@ -1,0 +1,10 @@
+# Kingdom Age screensaver feeds — one URL per line.
+# Honey-gold and fig-leaf rain; each monitor gets a different slice.
+# Comments and blank lines are ignored.
+
+https://wizwam.com/quotes/rss
+https://wizwam.com/news/rss
+https://www.biblegateway.com/votd/get/?format=atom
+
+# Optional extras:
+# https://yahvehyireh.com/feed

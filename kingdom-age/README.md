@@ -45,7 +45,7 @@ Cycle backgrounds with `Super + Ctrl + Space`.
 
 ## Screensaver
 
-Kingdom Age drives Omarchy’s Matrix screensaver: digital rain in fig-leaf green, then a quote or headline resolves on the Omarchy wordmark.
+Kingdom Age drives Omarchy’s Matrix screensaver: honey-gold and fig-leaf digital rain (not neon Matrix green), then a quote or headline resolves on the Omarchy wordmark.
 
 Items come from RSS/Atom feeds, cached under `~/.cache/omarchy/kingdom-age-rss/`. The cache refreshes when you apply this theme and lazily when it is older than about an hour. If every feed is offline or the cache is empty, the fig-tree verses in `screensaver.txt` are used instead. Matrix rain still runs either way.
 

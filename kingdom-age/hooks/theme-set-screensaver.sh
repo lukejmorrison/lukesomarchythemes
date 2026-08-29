@@ -7,17 +7,22 @@ set -euo pipefail
 
 theme="${1:-}"
 verses="$HOME/.config/omarchy/themes/kingdom-age/screensaver.txt"
+feeds="$HOME/.config/omarchy/themes/kingdom-age/screensaver-feeds.txt"
 branding="$HOME/.config/omarchy/branding/screensaver.txt"
+branding_feeds="$HOME/.config/omarchy/branding/screensaver-feeds.txt"
 stock="${OMARCHY_PATH:-/usr/share/omarchy}/logo.txt"
 
-if [[ $theme == kingdom-age ]]; then
+if [[ $theme == *kingdom-age* ]]; then
+  mkdir -p "$(dirname "$branding")"
   if [[ -f $verses ]]; then
-    mkdir -p "$(dirname "$branding")"
     cp "$verses" "$branding"
   fi
   helper="$HOME/.config/omarchy/themes/kingdom-age/scripts/omarchy-screensaver-rss"
   if [[ -x $helper ]]; then
     "$helper" refresh >/dev/null 2>&1 || true
+  fi
+  if [[ -f $feeds && ! -f $branding_feeds ]]; then
+    cp "$feeds" "$branding_feeds"
   fi
   exit 0
 fi
