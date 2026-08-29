@@ -49,6 +49,8 @@ Kingdom Age drives Omarchy’s Matrix screensaver: honey-gold and fig-leaf digit
 
 Items come from RSS/Atom feeds, cached under `~/.cache/omarchy/kingdom-age-rss/`. The cache refreshes when you apply this theme and lazily when it is older than about an hour. If every feed is offline or the cache is empty, the fig-tree verses in `screensaver.txt` are used instead. Matrix rain still runs either way.
 
+`omarchy-launch-screensaver` (Hyprland idle or `force`) execs the theme script by absolute path: the copy next to the launch script, or `~/.config/omarchy/themes/kingdom-age/scripts/omarchy-screensaver`. It does not PATH-lookup `omarchy-screensaver`, which would hit stock Omarchy `ttfx` when Ghostty / `hyprctl exec` omit `~/.local/bin`.
+
 A `theme-set` hook copies `screensaver.txt` into `~/.config/omarchy/branding/` when this theme is applied, and restores the stock Omarchy wordmark when you leave it.
 
 ### Feeds
