@@ -1,6 +1,7 @@
 #!/bin/bash
-# When Kingdom Age is applied, use the fig-tree verse Matrix screensaver.
-# When leaving it, restore the stock Omarchy wordmark if we still own branding.
+# When Kingdom Age is applied, use the fig-tree verse Matrix screensaver
+# and refresh the RSS cache. When leaving it, restore the stock Omarchy
+# wordmark if we still own branding.
 
 set -euo pipefail
 
@@ -15,6 +16,10 @@ if [[ $theme == *kingdom-age* ]]; then
   mkdir -p "$(dirname "$branding")"
   if [[ -f $verses ]]; then
     cp "$verses" "$branding"
+  fi
+  helper="$HOME/.config/omarchy/themes/kingdom-age/scripts/omarchy-screensaver-rss"
+  if [[ -x $helper ]]; then
+    "$helper" refresh >/dev/null 2>&1 || true
   fi
   if [[ -f $feeds && ! -f $branding_feeds ]]; then
     cp "$feeds" "$branding_feeds"

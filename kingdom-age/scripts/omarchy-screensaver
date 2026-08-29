@@ -62,13 +62,39 @@ discover_monitor() {
   printf '%s\n' "screen"
 }
 
+script_path="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null; then
+  script_path="$(readlink -f "$script_path" 2>/dev/null || echo "$script_path")"
+fi
+script_dir="$(cd "$(dirname "$script_path")" && pwd)"
+rss_helper="$script_dir/omarchy-screensaver-rss"
+if [[ ! -x $rss_helper ]]; then
+  rss_helper="${HOME}/.config/omarchy/themes/kingdom-age/scripts/omarchy-screensaver-rss"
+fi
+
+# Prefer a cached RSS item (title + quote). Fall back to branding verses.
+screensaver_input() {
+  if [[ -x $rss_helper ]]; then
+    local picked
+    picked="$("$rss_helper" pick 2>/dev/null || true)"
+    if [[ -n $picked && -f $picked ]] && grep -q 'KINGDOM AGE' "$picked" 2>/dev/null; then
+      printf '%s\n' "$picked"
+      return
+    fi
+  fi
+  printf '%s\n' "$branding"
+}
+
 run_ttfx() {
   local input="$branding"
   local monitor
 
   if kingdom_age_active; then
-    monitor=$(discover_monitor)
-    if [[ -f $feeds_py ]]; then
+    # Prefer the PR RSS helper (cached item). Fall back to main's
+    # per-monitor feed builder, then the branding verses.
+    input="$(screensaver_input)"
+    if [[ $input == "$branding" && -f $feeds_py ]]; then
+      monitor=$(discover_monitor)
       built=$(python3 "$feeds_py" "$monitor" 2>/dev/null || true)
       [[ -n $built && -f $built ]] && input="$built"
     fi
