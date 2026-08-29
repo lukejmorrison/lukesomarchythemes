@@ -1,6 +1,9 @@
-# Edge-to-edge Kingdom Age screensaver. Soil fill so leftover cells are not black.
+# Isolated by launch: --config-default-files=false so the 14px user padding
+# in ~/.config/ghostty/config cannot leave empty bands around the rain.
 background = #17140f
 foreground = #ead9c4
+font-family = JetBrainsMono Nerd Font
+font-size = 18
 window-padding-x = 0
 window-padding-y = 0
 window-padding-color = extend-always
@@ -9,3 +12,7 @@ window-theme = ghostty
 background-opacity = 1
 cursor-color = #17140f
 cursor-opacity = 0
+gtk-single-instance = false
+confirm-close-surface = false
+resize-overlay = never
+cursor-style-blink = false

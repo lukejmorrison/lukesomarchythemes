@@ -278,9 +278,9 @@ class ShippedFilesTests(unittest.TestCase):
 
     def test_screensaver_still_uses_branding_fallback(self):
         script = (THEME / "scripts" / "omarchy-screensaver").read_text(encoding="utf-8")
-        self.assertIn("screensaver_input", script)
-        self.assertIn("matrix", script)
+        self.assertIn("kingdom-rain.py", script)
         self.assertIn("$branding", script)
+        self.assertIn("kingdom_age_active", script)
 
     def test_launch_execs_theme_screensaver_path(self):
         script = (THEME / "scripts" / "omarchy-launch-screensaver").read_text(encoding="utf-8")

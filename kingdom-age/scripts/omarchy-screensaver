@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Kingdom Age screensaver: honey-gold + fig-leaf Matrix rain over RSS (or verses).
-# Each monitor gets its own slice of the feeds.
+# Kingdom Age screensaver: honey/fig Matrix rain. Verse-words fall like Tetris
+# and stack into garden silhouettes, then reverse-rain into the next verse.
 
 screensaver_in_focus() {
   hyprctl activewindow -j | jq -e '.class == "org.omarchy.screensaver"' >/dev/null 2>&1
@@ -9,7 +9,9 @@ screensaver_in_focus() {
 
 exit_screensaver() {
   hyprctl eval 'hl.config({ cursor = { invisible = false } })' &>/dev/null || hyprctl keyword cursor:invisible false &>/dev/null || true
+  [[ -n ${rain_pid:-} ]] && kill "$rain_pid" 2>/dev/null || true
   pkill -x ttfx 2>/dev/null
+  pkill -f '[k]ingdom-rain.py' 2>/dev/null
   pkill -f '[o]rg.omarchy.screensaver' 2>/dev/null
   exit 0
 }
@@ -23,21 +25,37 @@ hyprctl eval 'hl.config({ cursor = { invisible = true } })' &>/dev/null || hyprc
 tty=$(tty 2>/dev/null)
 
 wait_for_terminal_resize() {
-  local deadline=$((SECONDS + 2))
-  while ((SECONDS < deadline)) && [[ $(stty size 2>/dev/null) == "24 80" ]]; do
-    sleep 0.02
+  local deadline=$((SECONDS + 3))
+  local prev="" cur=""
+  local stable=0
+  while ((SECONDS < deadline)); do
+    cur=$(stty size 2>/dev/null || echo "24 80")
+    if [[ $cur != "24 80" && $cur == "$prev" ]]; then
+      stable=$((stable + 1))
+      ((stable >= 4)) && return 0
+    else
+      stable=0
+    fi
+    prev=$cur
+    sleep 0.04
   done
 }
 
 wait_for_terminal_resize
 
-branding="${HOME}/.config/omarchy/branding/screensaver.txt"
-feeds_py="${HOME}/.config/omarchy/themes/kingdom-age/scripts/screensaver-feeds.py"
-if [[ ! -f $feeds_py ]]; then
-  feeds_py="${HOME}/.config/omarchy/themes/1-kingdom-age-v2/scripts/screensaver-feeds.py"
+script_path="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null; then
+  script_path="$(readlink -f "$script_path" 2>/dev/null || echo "$script_path")"
 fi
-if [[ ! -f $feeds_py ]]; then
-  feeds_py="/home/luke/dev/omatheme/kingdom-age/scripts/screensaver-feeds.py"
+script_dir="$(cd "$(dirname "$script_path")" && pwd)"
+
+branding="${HOME}/.config/omarchy/branding/screensaver.txt"
+rain_py="$script_dir/kingdom-rain.py"
+if [[ ! -f $rain_py ]]; then
+  rain_py="${HOME}/.config/omarchy/themes/kingdom-age/scripts/kingdom-rain.py"
+fi
+if [[ ! -f $rain_py ]]; then
+  rain_py="/home/luke/dev/omatheme/kingdom-age/scripts/kingdom-rain.py"
 fi
 
 kingdom_age_active() {
@@ -62,70 +80,32 @@ discover_monitor() {
   printf '%s\n' "screen"
 }
 
-script_path="${BASH_SOURCE[0]}"
-if command -v readlink >/dev/null; then
-  script_path="$(readlink -f "$script_path" 2>/dev/null || echo "$script_path")"
-fi
-script_dir="$(cd "$(dirname "$script_path")" && pwd)"
-rss_helper="$script_dir/omarchy-screensaver-rss"
-if [[ ! -x $rss_helper ]]; then
-  rss_helper="${HOME}/.config/omarchy/themes/kingdom-age/scripts/omarchy-screensaver-rss"
-fi
-
-# Prefer a cached RSS item (title + quote). Fall back to branding verses.
-screensaver_input() {
-  if [[ -x $rss_helper ]]; then
-    local picked
-    picked="$("$rss_helper" pick 2>/dev/null || true)"
-    if [[ -n $picked && -f $picked ]] && grep -q 'KINGDOM AGE' "$picked" 2>/dev/null; then
-      printf '%s\n' "$picked"
-      return
-    fi
-  fi
-  printf '%s\n' "$branding"
-}
-
-run_ttfx() {
-  local input="$branding"
-  local monitor
-
-  if kingdom_age_active; then
-    # Prefer the PR RSS helper (cached item). Fall back to main's
-    # per-monitor feed builder, then the branding verses.
-    input="$(screensaver_input)"
-    if [[ $input == "$branding" && -f $feeds_py ]]; then
-      monitor=$(discover_monitor)
-      built=$(python3 "$feeds_py" "$monitor" 2>/dev/null || true)
-      [[ -n $built && -f $built ]] && input="$built"
-    fi
-
-    # Fill the terminal. Pin canvas to the top-left so leftover cells are not
-    # a centered black frame. Soil fill matches Ghostty/Alacritty/Foot.
-    ttfx -i "$input" \
-      --frame-rate 120 --canvas-width -1 --canvas-height -1 --reuse-canvas \
-      --anchor-canvas nw --anchor-text c --no-eol --no-restore-cursor \
-      --terminal-background-color '#17140f' \
-      matrix \
-      --rain-time 10 \
-      --highlight-color f4e8d6 \
-      --rain-color-gradient d4a054 e0b85a c4924a 8f7a3a 6f9a4a 3d5a28 \
-      --final-gradient-stops f4e8d6 d4a054 6f9a4a \
-      --final-gradient-direction radial \
-      --rain-symbols A E I O U T H S N R L D M C G F B Y W P K V . : + '|' ¦ '*' 2 5 9
-  else
-    ttfx -i "$input" \
-      --frame-rate 120 --canvas-width -1 --canvas-height -1 --reuse-canvas \
-      --anchor-canvas nw --anchor-text c \
-      --random-effect --no-eol --no-restore-cursor --terminal-background-color '#17140f'
-  fi
-}
-
-while true; do
-  run_ttfx &
-
-  while pgrep -t "${tty#/dev/}" -x ttfx >/dev/null; do
+watch_pid() {
+  local pid="$1"
+  local deadline=$((SECONDS + 2))
+  while ((SECONDS < deadline)) && ! kill -0 "$pid" 2>/dev/null; do
+    sleep 0.03
+  done
+  while kill -0 "$pid" 2>/dev/null; do
     if read -n1 -t 1 || ! screensaver_in_focus; then
       exit_screensaver
     fi
   done
+}
+
+monitor=$(discover_monitor)
+
+while true; do
+  if kingdom_age_active && [[ -f $rain_py ]]; then
+    python3 "$rain_py" --monitor "$monitor" --hold 15 --fps 24 &
+    rain_pid=$!
+    watch_pid "$rain_pid"
+    rain_pid=""
+  else
+    ttfx -i "$branding" \
+      --frame-rate 60 --canvas-width 0 --canvas-height 0 \
+      --anchor-canvas c --anchor-text c \
+      --random-effect --no-eol --no-restore-cursor --terminal-background-color '#17140f' &
+    watch_pid $!
+  fi
 done

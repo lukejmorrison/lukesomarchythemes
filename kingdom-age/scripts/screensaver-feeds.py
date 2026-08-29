@@ -135,20 +135,112 @@ def fallback_text() -> str:
     return "KINGDOM AGE\n\nThey shall sit every man under his vine and under his fig tree."
 
 
+# Visible pad so Matrix resolve does not hide leftover cells (it drops ASCII space).
+GRID_FILL = "·"
+
+
+def char_width(ch: str) -> int:
+    o = ord(ch)
+    if ch in "\n\r":
+        return 0
+    if o < 32:
+        return 0
+    # CJK / fullwidth ranges that would overflow a column.
+    if (
+        0x1100 <= o <= 0x115F
+        or 0x2329 <= o <= 0x232A
+        or 0x2E80 <= o <= 0xA4CF
+        or 0xAC00 <= o <= 0xD7A3
+        or 0xF900 <= o <= 0xFAFF
+        or 0xFE10 <= o <= 0xFE6F
+        or 0xFF00 <= o <= 0xFF60
+        or 0xFFE0 <= o <= 0xFFE6
+    ):
+        return 2
+    return 1
+
+
+def display_width(text: str) -> int:
+    return sum(char_width(ch) for ch in text)
+
+
 def wrap(text: str, width: int = 72) -> str:
+    return "\n".join(wrap_lines(text, width))
+
+
+def wrap_lines(text: str, width: int) -> list[str]:
+    width = max(8, int(width))
     words = text.split()
     if not words:
-        return ""
+        return []
     lines: list[str] = []
     cur = words[0]
     for w in words[1:]:
-        if len(cur) + 1 + len(w) <= width:
+        if display_width(cur) + 1 + display_width(w) <= width:
             cur += " " + w
         else:
             lines.append(cur)
             cur = w
     lines.append(cur)
-    return "\n".join(lines)
+    return lines
+
+
+def clip_row(text: str, cols: int) -> str:
+    out: list[str] = []
+    w = 0
+    for ch in text.replace("\t", " ").replace("\r", ""):
+        if ch == "\n":
+            break
+        cw = char_width(ch)
+        if cw <= 0:
+            continue
+        if w + cw > cols:
+            break
+        out.append(ch)
+        w += cw
+    if w < cols:
+        out.append(GRID_FILL * (cols - w))
+    return "".join(out)
+
+
+def content_lines(text: str) -> list[str]:
+    """Drop the ASCII wordmark; keep verses/RSS as wrap-ready paragraphs."""
+    cleaned: list[str] = []
+    for ln in text.splitlines():
+        if any(ch in ln for ch in "▄█▀"):
+            continue
+        cleaned.append(ln.rstrip())
+    paras = re.split(r"\n\s*\n", "\n".join(cleaned))
+    lines: list[str] = []
+    for para in paras:
+        body = " ".join(para.split())
+        if body:
+            lines.append(body)
+    return lines or ["KINGDOM AGE"]
+
+
+def fill_grid(text: str, cols: int, rows: int) -> str:
+    """Tile wrapped content into a cols×rows cell grid. Every cell is a glyph."""
+    cols = max(8, int(cols))
+    rows = max(4, int(rows))
+    paras = content_lines(text)
+    wrapped: list[str] = []
+    for para in paras:
+        wrapped.extend(wrap_lines(para, cols) or [""])
+        wrapped.append("")
+    while wrapped and wrapped[-1] == "":
+        wrapped.pop()
+    if not wrapped:
+        wrapped = ["KINGDOM AGE"]
+
+    out: list[str] = []
+    i = 0
+    while len(out) < rows:
+        out.append(clip_row(wrapped[i % len(wrapped)], cols))
+        i += 1
+        if i % len(wrapped) == 0 and len(out) < rows:
+            out.append(clip_row("", cols))
+    return "\n".join(out[:rows]) + "\n"
 
 
 def verse_items() -> list[tuple[str, str]]:
@@ -169,17 +261,30 @@ def verse_items() -> list[tuple[str, str]]:
     return items
 
 
-def compose(items: list[tuple[str, str]], monitor: str, index: int, count: int) -> str:
+def collect_items(monitor: str) -> list[tuple[str, str]]:
+    """RSS + verses, shuffled stably, split across monitors."""
+    index, count = monitor_index(monitor)
+    urls = load_feed_urls()
+    items = cached_items(urls)
+    seen = {title for title, _ in items}
+    for title, desc in verse_items():
+        if title not in seen:
+            items.append((title, desc))
+            seen.add(title)
     if not items:
         items = verse_items()
-
-    rng = random.Random(hashlib.sha1(b"kingdom-age-feeds").hexdigest())
+    rng = random.Random(hashlib.sha1(f"kingdom-age-{monitor}".encode()).hexdigest())
     pool = list(items)
     rng.shuffle(pool)
     if count > 1 and pool:
-        pool = [it for i, it in enumerate(pool) if i % count == index] or pool[:1]
-    pool = pool[:8]
+        pool = [it for i, it in enumerate(pool) if i % count == index] or pool
+    return pool or [("KINGDOM AGE", "They shall sit every man under his vine and under his fig tree.")]
 
+
+def compose(items: list[tuple[str, str]], monitor: str, index: int, count: int) -> str:
+    if not items:
+        items = collect_items(monitor)
+    pool = items[:8]
     blocks = [f"KINGDOM AGE  ·  {monitor}", ""]
     for title, desc in pool:
         if title:
@@ -188,6 +293,66 @@ def compose(items: list[tuple[str, str]], monitor: str, index: int, count: int) 
             blocks.append(wrap(desc))
         blocks.append("")
     return "\n".join(blocks).rstrip() + "\n"
+
+
+def clip_plain(text: str, cols: int) -> str:
+    out: list[str] = []
+    w = 0
+    for ch in text.replace("\t", " ").replace("\r", ""):
+        if ch == "\n":
+            break
+        cw = char_width(ch)
+        if cw <= 0:
+            continue
+        if w + cw > cols:
+            break
+        out.append(ch)
+        w += cw
+    return "".join(out)
+
+
+def center_line(text: str, cols: int) -> str:
+    text = clip_plain(text.strip(), cols)
+    w = display_width(text)
+    if w >= cols:
+        return text
+    pad = (cols - w) // 2
+    return (" " * pad) + text
+
+
+def format_slide(title: str, body: str, cols: int, rows: int, kicker: str = "KINGDOM AGE") -> str:
+    """One verse, wrapped to a readable column and centered on the terminal."""
+    cols = max(24, int(cols))
+    rows = max(8, int(rows))
+    wrap_w = max(28, min(56, cols - 12))
+    block: list[str] = []
+    if kicker:
+        block.append(kicker)
+        block.append("")
+    title = (title or "").strip()
+    body = (body or "").strip()
+    if title:
+        block.append(title)
+        block.append("")
+    if body and body != title:
+        block.extend(wrap_lines(body, wrap_w))
+    while block and block[-1] == "":
+        block.pop()
+    if not block:
+        block = ["KINGDOM AGE"]
+    if len(block) > rows:
+        block = block[:rows]
+    top = max(0, (rows - len(block)) // 2)
+    lines = [""] * top + block
+    while len(lines) < rows:
+        lines.append("")
+    return "\n".join(center_line(ln, cols) for ln in lines[:rows]) + "\n"
+
+
+def hold_seconds(title: str, body: str) -> int:
+    words = len(f"{title} {body}".split())
+    # ~3 words/sec plus time to settle after the reveal.
+    return min(40, max(18, 12 + words // 3))
 
 
 def monitor_index(name: str) -> tuple[int, int]:
@@ -229,22 +394,89 @@ def discover_monitor() -> str:
     return "screen"
 
 
-def main() -> int:
-    monitor = sys.argv[1] if len(sys.argv) > 1 else discover_monitor()
+def cmd_fill_grid(argv: list[str]) -> int:
+    import argparse
+
+    p = argparse.ArgumentParser(prog="screensaver-feeds.py fill-grid")
+    p.add_argument("--cols", type=int, required=True)
+    p.add_argument("--rows", type=int, required=True)
+    p.add_argument("--input", default="-")
+    p.add_argument("--output", default="-")
+    args = p.parse_args(argv)
+    if args.input in ("", "-"):
+        src = sys.stdin.read()
+    else:
+        src = Path(args.input).read_text(encoding="utf-8", errors="replace")
+    grid = fill_grid(src, args.cols, args.rows)
+    if args.output in ("", "-"):
+        sys.stdout.write(grid)
+    else:
+        dest = Path(args.output)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(grid, encoding="utf-8")
+        sys.stdout.write(str(dest))
+    return 0
+
+
+def cmd_compose(monitor: str) -> int:
     index, count = monitor_index(monitor)
-    urls = load_feed_urls()
-    items = cached_items(urls)
-    seen = {title for title, _ in items}
-    for title, desc in verse_items():
-        if title not in seen:
-            items.append((title, desc))
-            seen.add(title)
+    items = collect_items(monitor)
     text = compose(items, monitor, index, count)
     CACHE.mkdir(parents=True, exist_ok=True)
     out = CACHE / f"screen-{re.sub(r'[^A-Za-z0-9._-]', '_', monitor)}.txt"
     out.write_text(text, encoding="utf-8")
     sys.stdout.write(str(out))
     return 0
+
+
+def cmd_pick_slide(argv: list[str]) -> int:
+    import argparse
+    import json
+
+    p = argparse.ArgumentParser(prog="screensaver-feeds.py pick-slide")
+    p.add_argument("--monitor", default="")
+    p.add_argument("--cols", type=int, required=True)
+    p.add_argument("--rows", type=int, required=True)
+    p.add_argument("--output", default="")
+    args = p.parse_args(argv)
+    monitor = args.monitor.strip() or discover_monitor()
+    pool = collect_items(monitor)
+    CACHE.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", monitor)
+    idx_path = CACHE / f"idx-{safe}.txt"
+    try:
+        idx = int(idx_path.read_text(encoding="utf-8").strip() or "0")
+    except (OSError, ValueError):
+        idx = 0
+    title, body = pool[idx % len(pool)]
+    try:
+        idx_path.write_text(str(idx + 1), encoding="utf-8")
+    except OSError:
+        pass
+    slide = format_slide(title, body, args.cols, args.rows)
+    dest = Path(args.output) if args.output else CACHE / f"slide-{safe}.txt"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(slide, encoding="utf-8")
+    sys.stdout.write(
+        json.dumps(
+            {
+                "path": str(dest),
+                "hold": hold_seconds(title, body),
+                "title": title,
+                "index": idx,
+            }
+        )
+    )
+    return 0
+
+
+def main() -> int:
+    if sys.argv[1:2] == ["fill-grid"]:
+        return cmd_fill_grid(sys.argv[2:])
+    if sys.argv[1:2] == ["pick-slide"]:
+        return cmd_pick_slide(sys.argv[2:])
+    monitor = sys.argv[1] if len(sys.argv) > 1 else discover_monitor()
+    return cmd_compose(monitor)
 
 
 if __name__ == "__main__":

@@ -45,7 +45,7 @@ Cycle backgrounds with `Super + Ctrl + Space`.
 
 ## Screensaver
 
-Kingdom Age drives Omarchy’s Matrix screensaver: honey-gold and fig-leaf digital rain (not neon Matrix green), then a quote or headline resolves on the Omarchy wordmark.
+Kingdom Age drives Omarchy’s screensaver: honey-gold and fig-leaf rain (not neon Matrix green). Verse **words fall like Tetris** and stack into little pictures — fig trees, houses, gardens, rivers, eagles — while one word from the verse lights up in the rain. After about **15 seconds** the letters **mount up with wings** and fly off, then the next verse begins. Isaiah 40:31 builds an eagle and takes off. Two monitors get different slices of the same pool and keep cycling.
 
 Items come from RSS/Atom feeds, cached under `~/.cache/omarchy/kingdom-age-rss/`. The cache refreshes when you apply this theme and lazily when it is older than about an hour. If every feed is offline or the cache is empty, the fig-tree verses in `screensaver.txt` are used instead. Matrix rain still runs either way.
 

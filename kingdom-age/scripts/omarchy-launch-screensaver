@@ -75,7 +75,7 @@ for m in $(hyprctl monitors -j | jq -r '.[] | .name'); do
     hypr_exec alacritty --class=org.omarchy.screensaver --config-file "$alacritty_cfg" -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
     ;;
   *ghostty*)
-    hypr_exec ghostty --class=org.omarchy.screensaver --config-file="$ghostty_cfg" --font-size=18 --background=#17140f --window-padding-x=0 --window-padding-y=0 --window-decoration=none -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
+    hypr_exec ghostty --class=org.omarchy.screensaver --config-default-files=false --config-file="$ghostty_cfg" --gtk-single-instance=false --font-size=18 --background=#17140f --foreground=#ead9c4 --window-padding-x=0 --window-padding-y=0 --window-decoration=none --confirm-close-surface=false -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
     ;;
   *foot*)
     hypr_exec foot --app-id=org.omarchy.screensaver --config="$foot_cfg" -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
