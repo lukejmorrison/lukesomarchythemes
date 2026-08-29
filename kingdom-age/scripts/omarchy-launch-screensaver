@@ -2,6 +2,9 @@
 
 # omarchy:summary=Launch the Omarchy screensaver in the default terminal on the system with the correct font configuration.
 # Kingdom Age: pass KINGDOM_AGE_MONITOR so each screen rains a different RSS slice.
+# Always exec the theme override by absolute path. Hyprland / Ghostty -e PATH
+# does not include ~/.local/bin, so a bare `omarchy-screensaver` hits stock
+# /usr/bin or /usr/share/omarchy/bin (ttfx --random-effect).
 
 if omarchy-cmd-missing ttfx; then
   exit 1
@@ -10,6 +13,20 @@ fi
 pgrep -f '[o]rg.omarchy.screensaver' && exit 0
 
 if omarchy-toggle-enabled screensaver-off && [[ $1 != "force" ]]; then
+  exit 1
+fi
+
+# Sibling of this script (follows ~/.local/bin symlink), then the installed theme.
+script_path="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null; then
+  script_path="$(readlink -f "$script_path" 2>/dev/null || echo "$script_path")"
+fi
+script_dir="$(cd "$(dirname "$script_path")" && pwd)"
+screensaver="$script_dir/omarchy-screensaver"
+if [[ ! -x $screensaver ]]; then
+  screensaver="${HOME}/.config/omarchy/themes/kingdom-age/scripts/omarchy-screensaver"
+fi
+if [[ ! -x $screensaver ]]; then
   exit 1
 fi
 
@@ -51,16 +68,16 @@ for m in $(hyprctl monitors -j | jq -r '.[] | .name'); do
 
   case $terminal in
   *Alacritty*)
-    hypr_exec alacritty --class=org.omarchy.screensaver --config-file "$OMARCHY_PATH/default/alacritty/screensaver.toml" -e env "KINGDOM_AGE_MONITOR=$m" omarchy-screensaver
+    hypr_exec alacritty --class=org.omarchy.screensaver --config-file "$OMARCHY_PATH/default/alacritty/screensaver.toml" -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
     ;;
   *ghostty*)
-    hypr_exec ghostty --class=org.omarchy.screensaver --config-file="$OMARCHY_PATH/default/ghostty/screensaver" --font-size=18 -e env "KINGDOM_AGE_MONITOR=$m" omarchy-screensaver
+    hypr_exec ghostty --class=org.omarchy.screensaver --config-file="$OMARCHY_PATH/default/ghostty/screensaver" --font-size=18 -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
     ;;
   *foot*)
-    hypr_exec foot --app-id=org.omarchy.screensaver --config="$OMARCHY_PATH/default/foot/screensaver.ini" -e env "KINGDOM_AGE_MONITOR=$m" omarchy-screensaver
+    hypr_exec foot --app-id=org.omarchy.screensaver --config="$OMARCHY_PATH/default/foot/screensaver.ini" -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
     ;;
   *kitty*)
-    hypr_exec kitty --class=org.omarchy.screensaver --override font_size=18 --override window_padding_width=0 -e env "KINGDOM_AGE_MONITOR=$m" omarchy-screensaver
+    hypr_exec kitty --class=org.omarchy.screensaver --override font_size=18 --override window_padding_width=0 -e env "KINGDOM_AGE_MONITOR=$m" "$screensaver"
     ;;
   esac
 

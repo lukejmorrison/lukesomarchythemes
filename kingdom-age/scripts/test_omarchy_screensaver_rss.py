@@ -8,6 +8,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -273,6 +274,7 @@ class ShippedFilesTests(unittest.TestCase):
         self.assertIn("https://wizwam.com/news/rss", text)
         self.assertIn("omarchy-launch-screensaver force", text)
         self.assertIn("preview", text)
+        self.assertIn("themes/kingdom-age/scripts/omarchy-screensaver", text)
 
     def test_screensaver_still_uses_branding_fallback(self):
         script = (THEME / "scripts" / "omarchy-screensaver").read_text(encoding="utf-8")
@@ -280,9 +282,50 @@ class ShippedFilesTests(unittest.TestCase):
         self.assertIn("matrix", script)
         self.assertIn("$branding", script)
 
+    def test_launch_execs_theme_screensaver_path(self):
+        script = (THEME / "scripts" / "omarchy-launch-screensaver").read_text(encoding="utf-8")
+        self.assertIn("$script_dir/omarchy-screensaver", script)
+        self.assertIn(
+            "${HOME}/.config/omarchy/themes/kingdom-age/scripts/omarchy-screensaver",
+            script,
+        )
+        self.assertIn('"$screensaver"', script)
+        # Hyprland/Ghostty -e must not PATH-lookup stock /usr/bin or /usr/share/omarchy/bin
+        self.assertNotRegex(
+            script,
+            r'-e env "KINGDOM_AGE_MONITOR=\$m" omarchy-screensaver\b',
+        )
+
+    def test_launch_resolver_follows_symlink_to_sibling(self):
+        launch = THEME / "scripts" / "omarchy-launch-screensaver"
+        sibling = THEME / "scripts" / "omarchy-screensaver"
+        with tempfile.TemporaryDirectory() as tmp:
+            link = Path(tmp) / "omarchy-launch-screensaver"
+            link.symlink_to(launch)
+            resolved = subprocess.check_output(
+                [
+                    "bash",
+                    "-c",
+                    r"""
+script_path="$1"
+if command -v readlink >/dev/null; then
+  script_path="$(readlink -f "$script_path" 2>/dev/null || echo "$script_path")"
+fi
+script_dir="$(cd "$(dirname "$script_path")" && pwd)"
+screensaver="$script_dir/omarchy-screensaver"
+printf '%s\n' "$screensaver"
+""",
+                    "resolve",
+                    str(link),
+                ],
+                text=True,
+            ).strip()
+        self.assertTrue(Path(resolved).is_absolute())
+        self.assertEqual(Path(resolved).resolve(), sibling.resolve())
+
     def test_hook_still_restores_stock_wordmark(self):
         hook = (THEME / "hooks" / "theme-set-screensaver.sh").read_text(encoding="utf-8")
-        self.assertIn('theme == kingdom-age', hook)
+        self.assertIn("theme == *kingdom-age*", hook)
         self.assertIn("KINGDOM AGE", hook)
         self.assertIn("cp \"$stock\" \"$branding\"", hook)
         self.assertIn("omarchy-screensaver-rss", hook)
